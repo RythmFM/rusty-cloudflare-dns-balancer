@@ -47,7 +47,8 @@ jobs:
           
           echo "Cache from $IMAGE_ID:$VERSION"
           
-          docker build . --file Dockerfile --tag $IMAGE_NAME --cache-from $IMAGE_ID:$VERSION
+          docker build . --file Dockerfile --target builder --tag $IMAGE_NAME-build-stage --cache-from $IMAGE_ID:$VERSION-build-stage
+          docker build . --file Dockerfile --target runtime --tag $IMAGE_NAME --cache-from $IMAGE_ID:$VERSION-build-stage --cache-from $IMAGE_ID:$VERSION
 
       - name: Push image
         run: |
@@ -68,5 +69,8 @@ jobs:
           echo IMAGE_ID=$IMAGE_ID
           echo VERSION=$VERSION
 
+          docker tag $IMAGE_NAME-build-stage $IMAGE_ID:$VERSION-build-stage
           docker tag $IMAGE_NAME $IMAGE_ID:$VERSION
+          
+          docker push $IMAGE_ID:$VERSION-build-stage
           docker push $IMAGE_ID:$VERSION
