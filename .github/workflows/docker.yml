@@ -45,6 +45,8 @@ jobs:
           # Use Docker `latest` tag convention
           [ "$VERSION" == "master" ] && VERSION=latest
           
+          echo "Cache from $IMAGE_ID:$VERSION"
+          
           docker build . --file Dockerfile --tag $IMAGE_NAME --cache-from $IMAGE_ID:$VERSION
 
       - name: Push image
