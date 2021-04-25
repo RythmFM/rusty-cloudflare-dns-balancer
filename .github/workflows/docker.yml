@@ -47,6 +47,9 @@ jobs:
           
           echo "Cache from $IMAGE_ID:$VERSION"
           
+          docker pull $IMAGE_ID:$VERSION-build-stage
+          docker pull $IMAGE_ID:$VERSION
+          
           docker build . --file Dockerfile --target builder --tag $IMAGE_NAME-build-stage --cache-from $IMAGE_ID:$VERSION-build-stage
           docker build . --file Dockerfile --target runtime --tag $IMAGE_NAME --cache-from $IMAGE_NAME-build-stage --cache-from $IMAGE_ID:$VERSION
 
