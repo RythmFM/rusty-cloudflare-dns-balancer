@@ -212,9 +212,21 @@ impl HealthChecker {
 
     async fn handle_target_down(&mut self, target: ServiceTarget) {
         if !self.unavailable.contains(&target.target) {
-            self.cloudflare_remove_target(&target).await;
-            self.unavailable.push(target.target);
-            warn!("Target {} went unavailable", target.target.to_string());
+            let dns_targets = self.targets.iter()
+                .filter(|inner| inner.dns.eq(&target.dns))
+                .collect::<Vec<&ServiceTarget>>();
+            let dns_unavailable = dns_targets.iter()
+                .filter(|inner| self.unavailable.contains(&inner.target))
+                .collect::<Vec<&&ServiceTarget>>();
+            let available = dns_targets.len() - dns_unavailable.len();
+            if available > 1 {
+                self.cloudflare_remove_target(&target).await;
+                self.unavailable.push(target.target);
+                warn!("Target {} went unavailable", target.target.to_string());
+            } else {
+                warn!("Target {} is unavailable. Not removing from CF due to being the last target",
+                      target.target.to_string());
+            }
         } else {
             debug!("Target {} is still unavailable", target.target.to_string());
         }
