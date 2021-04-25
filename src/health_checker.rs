@@ -13,6 +13,7 @@ use std::ops::Sub;
 use std::net::{IpAddr, SocketAddr, Ipv4Addr, TcpStream};
 use cloudflare::endpoints::dns::{ListDnsRecordsParams, ListDnsRecords, DnsContent, DnsRecord, CreateDnsRecord, CreateDnsRecordParams, DeleteDnsRecord};
 use cloudflare::framework::response::{ApiSuccess, ApiResponse};
+use std::collections::HashMap;
 
 pub(crate) struct HealthChecker {
     cloudflare_client: Client,
@@ -37,6 +38,42 @@ impl HealthChecker {
     pub fn run(mut self, interval: Duration) -> JoinHandle<()> {
         let http_client = self.http_client.clone();
         tokio::spawn(async move {
+            // Init
+            let mut dns_regions = Vec::new();
+            for target in &self.targets {
+                let zone = target.zone.clone();
+                if !dns_regions.contains(&(zone.clone(), target.dns.clone())) {
+                    dns_regions.push((zone.clone(), target.dns.clone()))
+                }
+            }
+            let mut existing_entries = HashMap::new();
+            for (zone, dns) in dns_regions {
+                if let Ok(response) = self.list_dns(zone.as_str(), dns.clone()).await {
+                    response.result.iter()
+                        .map(|dns| {
+                            match dns.content {
+                                DnsContent::A { content } => { Some(content) }
+                                _ => { None }
+                            }
+                        })
+                        .for_each(|opt_ip| {
+                            if let Some(ip) = opt_ip {
+                                existing_entries.insert((zone.clone(), dns.clone()), ip);
+                            }
+                        });
+                }
+            }
+
+            for target in &self.targets {
+                if !existing_entries.contains_key(&(target.zone.clone(), target.dns.clone())) {
+                    info!("{} -> {} DNS entry did not exist at startup, assuming it is unavailable",
+                          target.dns, target.target.to_string());
+                    self.unavailable.push(target.target);
+                }
+            }
+
+
+            // loop checks
             loop {
                 info!("Running health check");
                 let start = SystemTime::now();
