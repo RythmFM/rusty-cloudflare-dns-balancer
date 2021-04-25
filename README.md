@@ -68,6 +68,11 @@ An example value for this would look like that:
 ]
 ```
 
+# Side Notes
+Updating the dependencies requires to update the recipe.
+
+Update the recipe using `cargo chef prepare`.
+
 # Todo
 
 * Prometheus Metrics
