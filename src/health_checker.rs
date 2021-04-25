@@ -55,17 +55,20 @@ impl HealthChecker {
                                 ServiceUri::Icmp => {
                                     debug!("Checking ICMP {}", base_addr.to_string());
                                     #[cfg(not(target_env = "msvc"))]
-                                        let result = spawn_blocking({
+                                        let result = spawn_blocking(move || {
                                         let mut ping = Ping::new();
-                                        ping.set_timeout(timeout.as_secs_f64());
-                                        ping.add_host(base_addr.to_string().as_str());
-                                        let iter = ping.send()?;
-                                        let mut success = false;
-                                        for item in iter {
-                                            success = true
-                                        }
+                                        ping.set_timeout(timeout.as_secs_f64()).ok();
+                                        ping.add_host(base_addr.to_string().as_str()).ok();
+                                        let success = ping.send().map(|iter| {
+                                            let mut success = false;
+                                            for _item in iter {
+                                                // todo: make sure pings were successful
+                                                success = true
+                                            }
+                                            success
+                                        }).unwrap_or(false);
                                         success
-                                    }).await;
+                                    }).await.unwrap_or(false);
                                     #[cfg(target_env = "msvc")]
                                         let result = false;
                                     result
