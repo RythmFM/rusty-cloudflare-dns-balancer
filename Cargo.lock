@@ -1376,6 +1376,7 @@ dependencies = [
  "env_logger",
  "jemalloc-ctl",
  "jemallocator",
+ "lazy_static",
  "log",
  "oping",
  "prometheus",

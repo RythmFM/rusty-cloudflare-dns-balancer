@@ -20,6 +20,9 @@ caches would destroy the purpose of this balancer.
 | CF_TOKEN |               | The API Token used to interact with the CloudFlare API     |
 | SERVICE_TARGETS |        | The services which are supposed to be monitored.           |
 | CHECK_INTERVAL |      30 | The interval between checks on the targets in seconds      |
+| PROMETHEUS_ENABLED | false | Whether a prometheus webserver with /metrics endpoint should be started |
+| PROMETHEUS_HOST | 0.0.0.0 | The host on which the prometheus server will listen       |
+| PROMETHEUS_PORT |   8080 | The port on which the prometheus server will listen        |
 
 The service targets are an array of the following struct(s):
 ```rust
@@ -75,6 +78,5 @@ Update the recipe using `cargo chef prepare`.
 
 # Todo
 
-* Prometheus Metrics
 * IPv6 Support
 * Status Code checks for HTTP(S)

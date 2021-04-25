@@ -1,6 +1,7 @@
 mod models;
 mod health_checker;
 mod config;
+mod metrics;
 
 #[cfg(not(target_env = "msvc"))]
 use jemallocator::Jemalloc;
@@ -13,6 +14,8 @@ use crate::health_checker::HealthChecker;
 use std::process::exit;
 use tokio::time::Duration;
 use crate::config::Config;
+use std::net::{SocketAddr, IpAddr};
+use std::str::FromStr;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -56,6 +59,24 @@ async fn main() {
 
     let health_checker = HealthChecker::new(client, service_targets)
         .run(check_interval);
+
+    let prometheus_enabled = env::var("PROMETHEUS_ENABLED")
+        .map(|str| str.parse().unwrap())
+        .unwrap_or(false);
+
+    if prometheus_enabled {
+        info!("Starting prometheus server");
+        let prometheus_port = env::var("PROMETHEUS_PORT")
+            .map(|str| str.parse().unwrap())
+            .unwrap_or(8080);
+        tokio::spawn(async move {
+            // stupid warp has no error return
+            let ip = env::var("PROMETHEUS_HOST").unwrap_or("0.0.0.0".to_owned());
+            warp::serve(metrics::metrics_filter())
+                .run(SocketAddr::new(IpAddr::from_str(ip.as_str()).unwrap(), prometheus_port))
+                .await;
+        });
+    }
 
     tokio::select! {
         _val = health_checker => {

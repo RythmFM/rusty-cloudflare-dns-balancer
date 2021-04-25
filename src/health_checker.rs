@@ -1,4 +1,5 @@
 use crate::models::{ServiceTarget, ServiceUri};
+use crate::metrics::{CLOUDFLARE_REQUEST_COUNTER, TARGETS_AVAILABLE, HEALTHCHECK_REQUEST_TIME, TARGETS_STATUS};
 use cloudflare::framework::async_api::Client;
 use tokio::task::JoinHandle;
 #[cfg(not(target_env = "msvc"))]
@@ -51,6 +52,7 @@ impl HealthChecker {
                             let timeout_ms = target.response_threshold_ms.unwrap_or(1000);
                             let timeout = Duration::from_millis(timeout_ms as u64);
                             let service_uri = target.check;
+                            let request_start = SystemTime::now();
                             let up = match service_uri {
                                 ServiceUri::Icmp => {
                                     debug!("Checking ICMP {}", base_addr.to_string());
@@ -112,6 +114,16 @@ impl HealthChecker {
                                     HealthChecker::http_check(http_client.clone(), method, uri, timeout).await
                                 }
                             };
+                            let target_host = base_addr.to_string();
+                            let target_label = [target_host.as_str()];
+                            if let Ok(request_duration) = request_start.elapsed() {
+                                HEALTHCHECK_REQUEST_TIME
+                                    .with_label_values(&target_label)
+                                    .observe(request_duration.as_secs_f64());
+                            }
+                            TARGETS_STATUS
+                                .with_label_values(&target_label)
+                                .set(if up { 1 } else { 0 });
                             if up {
                                 info!("Target {} is up", base_addr.to_string());
                             } else {
@@ -144,6 +156,7 @@ impl HealthChecker {
                 } else {
                     Duration::from_secs(0)
                 };
+                TARGETS_AVAILABLE.set((self.targets.len() - self.unavailable.len()) as i64);
                 debug!("Sleeping for another {}s before next health check", sleep_duration.as_secs_f32());
                 tokio::time::sleep(sleep_duration).await;
             }
@@ -219,6 +232,9 @@ impl HealthChecker {
                         content: DnsContent::A { content: target.target },
                     },
                 }).await.ok();
+                CLOUDFLARE_REQUEST_COUNTER
+                    .with_label_values(&["create_dns"])
+                    .inc();
                 info!("Created cloudflare record for {} -> {}", dns_name, target.target.to_string());
             }
         }
@@ -245,6 +261,9 @@ impl HealthChecker {
                         zone_identifier: target.zone.as_str(),
                         identifier: entry.id.as_str(),
                     }).await.ok();
+                    CLOUDFLARE_REQUEST_COUNTER
+                        .with_label_values(&["delete_dns"])
+                        .inc();
                     info!("Deleted cloudflare record for {} -> {}", target.dns, target.target.to_string());
                 } else {
                     warn!("No match on cloudflare for record {} -> {}", target.dns, target.target.to_string())
@@ -257,6 +276,9 @@ impl HealthChecker {
     }
 
     async fn list_dns(&self, zone: &str, dns: String) -> ApiResponse<Vec<DnsRecord>> {
+        CLOUDFLARE_REQUEST_COUNTER
+            .with_label_values(&["list_dns"])
+            .inc();
         self.cloudflare_client.request_handle(&ListDnsRecords {
             zone_identifier: zone,
             params: ListDnsRecordsParams {
