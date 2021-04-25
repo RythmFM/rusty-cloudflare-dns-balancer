@@ -2,17 +2,15 @@ use crate::models::{ServiceTarget, ServiceUri};
 use crate::metrics::{CLOUDFLARE_REQUEST_COUNTER, TARGETS_AVAILABLE, HEALTHCHECK_REQUEST_TIME, TARGETS_STATUS};
 use cloudflare::framework::async_api::Client;
 use tokio::task::JoinHandle;
-#[cfg(not(target_env = "msvc"))]
 use tokio::task::spawn_blocking;
 use tokio::time::Duration;
 use log::{debug, info, warn};
 use warp::http::Method;
-use tokio::net::TcpStream;
 use std::time::SystemTime;
 #[cfg(not(target_env = "msvc"))]
 use oping::Ping;
 use std::ops::Sub;
-use std::net::{IpAddr, SocketAddr, Ipv4Addr};
+use std::net::{IpAddr, SocketAddr, Ipv4Addr, TcpStream};
 use cloudflare::endpoints::dns::{ListDnsRecordsParams, ListDnsRecords, DnsContent, DnsRecord, CreateDnsRecord, CreateDnsRecordParams, DeleteDnsRecord};
 use cloudflare::framework::response::{ApiSuccess, ApiResponse};
 
@@ -77,19 +75,22 @@ impl HealthChecker {
                                 }
                                 ServiceUri::TcpProbe(port) => {
                                     debug!("Checking TCP Probe {}:{}", base_addr.to_string(), port);
-                                    let start = SystemTime::now();
-                                    match TcpStream::connect(SocketAddr::new(IpAddr::from(base_addr), port)).await {
-                                        Ok(_) => {
-                                            debug!("TCP Probe succeeded");
-                                            start.elapsed()
-                                                .map(|duration| duration.as_millis() < timeout.as_millis())
-                                                .unwrap_or(false)
+                                    let addr = SocketAddr::new(IpAddr::from(base_addr), port);
+                                    spawn_blocking(move || {
+                                        let start = SystemTime::now();
+                                        match TcpStream::connect_timeout(&addr, timeout) {
+                                            Ok(_) => {
+                                                debug!("TCP Probe succeeded");
+                                                start.elapsed()
+                                                    .map(|duration| duration.as_millis() < timeout.as_millis())
+                                                    .unwrap_or(false)
+                                            }
+                                            Err(_) => {
+                                                debug!("TCP Probe failed");
+                                                false
+                                            }
                                         }
-                                        Err(_) => {
-                                            debug!("TCP Probe failed");
-                                            false
-                                        }
-                                    }
+                                    }).await.unwrap_or(false)
                                 }
                                 ServiceUri::Http(port, method, route) => {
                                     let mut uri = "http://".to_owned();
